@@ -181,7 +181,8 @@ namespace FacadeTools
                 string s = string.Format("Curve length is {0:f3}. Segment length", crv_length);
                 Console.Write(s);
                 Rhino.Geometry.Point3d[] points;
-                curve.DivideByLength(SegmentLength, true, out points);
+                double[] curvePars = curve.DivideByLength(SegmentLength, true, out points);
+                
                 PointGroups[i] = points;
                 //test for branch commit
             }
