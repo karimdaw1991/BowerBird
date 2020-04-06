@@ -27,6 +27,7 @@ namespace FacadeTools
         {
         }
 
+        
         /// <summary>
         /// Registers all the input parameters for this component.
         /// </summary>
@@ -66,6 +67,10 @@ namespace FacadeTools
         /// </summary>
         /// <param name="DA">The DA object can be used to retrieve data from input parameters and 
         /// to store data in output parameters.</param>
+        /// 
+        public double Height;
+
+
         protected override void SolveInstance(IGH_DataAccess DA)
         {
             // First, we need to retrieve all data from the input parameters.
@@ -79,6 +84,7 @@ namespace FacadeTools
             if (!DA.GetDataList(0, breps)) return;
             if (!DA.GetData(1, ref levelHeight)) return;
             if (!DA.GetData(2, ref PanelWidth)) return;
+
 
             // We should now validate the data and warn the user if invalid data is supplied.
             if (breps.Count < 1)
@@ -97,6 +103,9 @@ namespace FacadeTools
                 return;
             }
 
+            //setting inputs as global Variables
+
+            DA.GetData(1, ref Height);
             // We're set to create the Mesh Facade now. To keep the size of the SolveInstance() method small, 
             // The actual functionality will be in a different method:
             List<Brep> BrepFaces = ComputeFloorSurfaces(breps).Item2;
@@ -172,7 +181,7 @@ namespace FacadeTools
             Console.Write("Subdividing Edges");
             int CurveCount = ListOfCurves.Count;
 
-            Rhino.Geometry.Point3d[][] PointGroups = new Point3d[CurveCount][];
+            Point3d[][] PointGroups = new Point3d[CurveCount][];
 
             for (int i = 0; i < ListOfCurves.Count; i++)
             {
@@ -180,8 +189,21 @@ namespace FacadeTools
                 double crv_length = curve.GetLength();
                 string s = string.Format("Curve length is {0:f3}. Segment length", crv_length);
                 Console.Write(s);
-                Rhino.Geometry.Point3d[] points;
-                double[] curvePars = curve.DivideByLength(SegmentLength, true, out points);
+                double[] curvePars = curve.DivideByLength(SegmentLength, true, out Point3d[] points);
+                Curve[] splitSegmenets = curve.Split(curvePars);
+                for (int j = 0; j < splitSegmenets.Length; j++)
+                {
+                    Curve seg = splitSegmenets[j];
+                    Point3d pnt0 = seg.PointAtStart;
+                    Point3d pnt1 = seg.PointAtEnd;
+                    Point3d pnt2 = new Point3d(pnt1.X, pnt1.Y, pnt1.Z + Height); // using global variable height
+                    Point3d pnt3 = new Point3d(pnt0.X, pnt0.Y, pnt0.Z + Height); // using global variable height
+                    Point3d[] panalPnts = new Point3d[4];
+                    //panalPnts = [pnt0, pnt1, pnt2, pnt3];
+
+                }
+
+
                 
                 PointGroups[i] = points;
                 //test for branch commit
