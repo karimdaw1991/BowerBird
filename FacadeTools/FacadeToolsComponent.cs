@@ -183,6 +183,7 @@ namespace FacadeTools
                 Rhino.Geometry.Point3d[] points;
                 curve.DivideByLength(SegmentLength, true, out points);
                 PointGroups[i] = points;
+                //test for branch commit
             }
             return PointGroups;
         }
