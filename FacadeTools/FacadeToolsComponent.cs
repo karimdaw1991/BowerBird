@@ -18,7 +18,33 @@ namespace FacadeTools
 
         // global heights
         public static double[] SortedHeights;
+
+        // global Mesh Dictionary
+        public static Dictionary<int, WindowElement> WindowDictionary;
     }
+
+
+    public class WindowElement
+    {
+        // saving attributes, the attributes of this class with hopefully be filled up once the method MakeMeshFaces is called
+        public int[] WindowPointIds { get; set; }
+        public int WindowId { get; set; }
+        public int EdgeNumber { get; set; }
+        public int FloorNumber { get; set; }
+        public int HouseNumber { get; set; }
+
+        public WindowElement InitiateWindow(int id)
+        {
+            Dictionary<int, WindowElement> dict = Globals.WindowDictionary;
+            WindowElement windowElement = new WindowElement(); 
+            windowElement = dict[id];
+            return windowElement;
+        }
+
+    }
+
+
+
     public class FacadeToolsComponent : GH_Component
     {
         /// <summary>
@@ -48,6 +74,7 @@ namespace FacadeTools
             // to import lists or trees of values, modify the ParamAccess flag.
             pManager.AddBrepParameter("Building Masses", "BM", "Building masses for facade generation", GH_ParamAccess.list);
             pManager.AddNumberParameter("Panel Width", "PW", "Desired width of panel", GH_ParamAccess.item, 1.0);
+            pManager.AddIntegerParameter("Window Id", "Window Id", "Provides the Id to indicate a window#s attributes", GH_ParamAccess.item, 1);
 
 
             // If you want to change properties of certain parameters, 
@@ -65,8 +92,10 @@ namespace FacadeTools
             // Output parameters do not have default values, but they too must have the correct access type.
 
             
-            pManager.AddMeshParameter("Mesh Facade", "FM", "Mesh representation of facade", GH_ParamAccess.list);
+            pManager.AddMeshParameter("Mesh Facade", "FM", "Mesh representation of facade", GH_ParamAccess.item);
             pManager.AddBrepParameter("Floor Surfaces", "FS", "Brep surfaces for each floor level", GH_ParamAccess.list);
+            pManager.AddPointParameter("Vertex Points", "VP", "Vertex points of mesh faces", GH_ParamAccess.list);
+            pManager.AddIntegerParameter("Window Element Floor Number", "W_FloorNumber", "floor number of window", GH_ParamAccess.item);
             //pManager.AddPointParameter("Edge Points", "EP", "Point representation of subdivided edges given a panal width", GH_ParamAccess.list);
             // Sometimes you want to hide a specific parameter from the Rhino preview.// You can use the HideParameter() method as a quick way://pManager.HideParameter(0);
         }
@@ -86,11 +115,14 @@ namespace FacadeTools
             List<Brep> breps = new List<Brep>();
 
             double PanelWidth = 0.0;
+            int WindowId = 0;
 
+            List<Point3d> pnts = new List<Point3d>();
             // Then we need to access the input parameters individually. 
             // When data cannot be extracted from a parameter, we should abort this method.
             if (!DA.GetDataList(0, breps)) return;
             if (!DA.GetData(1, ref PanelWidth)) return;
+            if (!DA.GetData(2, ref WindowId)) return;
 
 
             // We should now validate the data and warn the user if invalid data is supplied.
@@ -113,13 +145,26 @@ namespace FacadeTools
             //Step 2 Compute Sorted Floor Heights
             double[] sHeights = ComputeFloorHeights(breps);
             //Step 3 Make mesh
-            List<Mesh> meshs = MakeMeshFaces(breps, PanelWidth);
+            Mesh mesh = MakeMeshFaces(breps, PanelWidth, out pnts);
             //Step 4 Display BottomFaces
             List<Brep> bottomFaces = DisplayAllBottomSurfaces(breps);
+            //Step 5 Save data onto each face
+
+            // for now we will just test this by sending teh data for the floor level,
+            // later we will instead send over the window object as a whole
+            // then create another compnenet that reads that data and does something with it.
+            WindowElement WindowInstance = new WindowElement();
+            WindowElement window10 = WindowInstance.InitiateWindow(WindowId);
+            int floorNumber = window10.FloorNumber;
+
+
+
 
             // Finally assign the spiral to the output parameter.
-            DA.SetDataList(0, meshs);
+            DA.SetData(0, mesh);
             DA.SetDataList(1, bottomFaces);
+            DA.SetDataList(2, pnts);
+            DA.SetData(3,floorNumber);
         }
 
         //----------------------------------------------------------------------------------------------------
@@ -211,8 +256,8 @@ namespace FacadeTools
 
 
 
-    //Computing Floor Edges
-    private List<Curve> ComputeFloorEdges(BrepFace face)
+        //Computing Floor Edges
+        private List<Curve> ComputeFloorEdges(BrepFace face)
         {
             List<Curve> OuterEdges = new List<Curve>();
             int counter = 0;
@@ -226,8 +271,12 @@ namespace FacadeTools
 
 
         //Subdividing Individual Edges
-        private List<Mesh> MakeMeshFaces(List<Brep> ListOfBreps, double SegmentLength)
+        private Mesh MakeMeshFaces(List<Brep> ListOfBreps, double SegmentLength, out List<Point3d> pnts)
         {
+            // initiate Dictionary to save windowElement attributes
+            var Windows = new Dictionary<int, WindowElement>();
+
+
             //getting list of heights
             double[] heightsList = Globals.SortedHeights;
             Brep[] SortedBreps = Globals.SortedBreps;
@@ -235,22 +284,31 @@ namespace FacadeTools
             //Create 3d array of all PanalPointGroups
             Point3d[][][] AllPanalPointsGroup = new Point3d[SortedBreps.Length][][];
 
-            List<Mesh> meshs = new List<Mesh>();
+            List<Point3d> points = new List<Point3d>();
+
+            Mesh mesh = new Mesh();
             // looping through srted Breps
+            int pnt_Id = 0;
+            int face_Id = 0;
+            int edge_Id = 0;
+            int floor_Id = 0;
+            int mass_Id = 0;
+
 
             for (int i = 0; i < SortedBreps.Length; i++)
             {
+
                 Brep brep = SortedBreps[i];
                 //Getting Bottom Face of Brep
                 BrepFace face = ComputeFloorSurfaces(brep).Item1;
                 //Getting Edge curves of Face
                 List<Curve> edges = ComputeFloorEdges(face);
-                Mesh mesh = new Mesh();
+                
                 for (int j = 0; j < edges.Count; j++)
                 {
                     Curve curve = edges[j];
                     double crv_length = curve.GetLength();
-                    double[] curvePars = curve.DivideByLength(SegmentLength, true, out Point3d[] points);
+                    double[] curvePars = curve.DivideByLength(SegmentLength, true);
                     Curve[] splitSegmenets = curve.Split(curvePars);
                     int count = splitSegmenets.Length;
                     Point3d[][] panalPntGroups = new Point3d[count][];
@@ -263,57 +321,62 @@ namespace FacadeTools
                         Point3d pnt2 = new Point3d(pnt1.X, pnt1.Y, pnt1.Z + height); // using global variable height
                         Point3d pnt3 = new Point3d(pnt0.X, pnt0.Y, pnt0.Z + height); // using global variable height
                         Point3d[] panalPnts = new Point3d[4];
+                        int[] vertexIds = new int[4];
+
                         panalPnts[0] = pnt0;
                         panalPnts[1] = pnt1;
                         panalPnts[2] = pnt2;
                         panalPnts[3] = pnt2;
+
+                        points.Add(pnt0);
+                        points.Add(pnt1);
+                        points.Add(pnt2);
+                        points.Add(pnt3);
 
                         //AddingPoints to Mesh
                         mesh.Vertices.Add(pnt0);
                         mesh.Vertices.Add(pnt1);
                         mesh.Vertices.Add(pnt2);
                         mesh.Vertices.Add(pnt3);
-                        mesh.Faces.AddFace(k * 4, k * 4 + 1, k * 4 + 2, k * 4 + 3);
+
+                        int vertexId0 = pnt_Id;
+                        int vertexId1 = pnt_Id + 1;
+                        int vertexId2 = pnt_Id + 2;
+                        int vertexId3 = pnt_Id + 3;
+
+                        vertexIds[0] = vertexId0;
+                        vertexIds[1] = vertexId1;
+                        vertexIds[2] = vertexId2;
+                        vertexIds[3] = vertexId3;
+
+                        mesh.Faces.AddFace(vertexId0, vertexId1, vertexId2, vertexId3);
+                        // Adding attributes to WindowElementObject
+                        Windows.Add(face_Id,
+                                new WindowElement
+                                {
+                                    WindowPointIds = vertexIds,
+                                    WindowId = face_Id,
+                                    EdgeNumber = edge_Id,
+                                    FloorNumber = floor_Id,
+                                    HouseNumber = mass_Id
+                                }
+                                );
+                        pnt_Id = pnt_Id + 4;
+                        face_Id = face_Id + 1;
                     }
-                    
+                    edge_Id = edge_Id + 1;
                 }
-                meshs.Add(mesh);
+                floor_Id = floor_Id + 1;
             }
-            return meshs;
+            mass_Id = mass_Id + 1;
+
+            mesh.Normals.ComputeNormals();
+            pnts = points;
+            Globals.WindowDictionary = Windows;
+            return mesh;
         }
-
-            
-
-        //Getting Subdivision Points
-        /*
-        private List<Point3d> DisplayPoints(List<Brep> ListOfBreps, double SegmentLength)
-        {
-            List<BrepFace> flrs = ComputeFloorSurfaces(ListOfBreps).Item1;
-            List<Curve> edges = ComputeFloorEdges(flrs);
-            Point3d[][][] points = SubdivideEdges(ListOfBreps,edges, SegmentLength);
-
-            List<Point3d> FlattenedPoints = new List<Point3d>();
-            for (int i = 0; i < points.Length; i++)
-            {
-                Point3d[][] pntgroup = points[i];
-                for (int j = 0; j < pntgroup.Length; )
-                {
-                    Point3d[] panalPntsUW = pntgroup[j];
-
-                    for (int k = 0; k < panalPntsUW.Length; j++)
-                    {
-                        Point3d pnt = panalPntsUW[k];
-                        FlattenedPoints.Add(pnt);
-                    }
-                }
 
            
-            }
-
-            return FlattenedPoints;
-        }
-        */
-
 
         /// <summary>
         /// Provides an Icon for every component that will be visible in the User Interface.
