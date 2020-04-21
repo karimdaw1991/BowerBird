@@ -95,7 +95,10 @@ namespace FacadeTools
             pManager.AddMeshParameter("Mesh Facade", "FM", "Mesh representation of facade", GH_ParamAccess.item);
             pManager.AddBrepParameter("Floor Surfaces", "FS", "Brep surfaces for each floor level", GH_ParamAccess.list);
             pManager.AddPointParameter("Vertex Points", "VP", "Vertex points of mesh faces", GH_ParamAccess.list);
-            pManager.AddIntegerParameter("Window Element Floor Number", "W_FloorNumber", "floor number of window", GH_ParamAccess.item);
+            pManager.AddIntegerParameter("Window Element Floor Number", "W_FloorNumber", "Floor number of window", GH_ParamAccess.item);
+            pManager.AddIntegerParameter("Window Element Window Number", "W_WindowNumber", "Window number of window", GH_ParamAccess.item);
+            pManager.AddIntegerParameter("Window Element Edge Number", "W_EdgeNumber", "Edge number of window", GH_ParamAccess.item);
+            pManager.AddIntegerParameter("Window Element House Number Number", "W_HouseNumber", "House number of window", GH_ParamAccess.item);
             //pManager.AddPointParameter("Edge Points", "EP", "Point representation of subdivided edges given a panal width", GH_ParamAccess.list);
             // Sometimes you want to hide a specific parameter from the Rhino preview.// You can use the HideParameter() method as a quick way://pManager.HideParameter(0);
         }
@@ -156,6 +159,9 @@ namespace FacadeTools
             WindowElement WindowInstance = new WindowElement();
             WindowElement window10 = WindowInstance.InitiateWindow(WindowId);
             int floorNumber = window10.FloorNumber;
+            int windowNumber = window10.WindowId;
+            int EdgeNumber = window10.EdgeNumber;
+            int HouseNumber = window10.HouseNumber;
 
 
 
@@ -165,6 +171,9 @@ namespace FacadeTools
             DA.SetDataList(1, bottomFaces);
             DA.SetDataList(2, pnts);
             DA.SetData(3,floorNumber);
+            DA.SetData(4, windowNumber);
+            DA.SetData(5, EdgeNumber);
+            DA.SetData(6, HouseNumber);
         }
 
         //----------------------------------------------------------------------------------------------------
@@ -365,10 +374,21 @@ namespace FacadeTools
                         face_Id = face_Id + 1;
                     }
                     edge_Id = edge_Id + 1;
+                    if (face_Id > count * edges.Count * SortedBreps.Length)
+                    {
+                        floor_Id = 0;
+                    }
+                    else
+                    {
+                        floor_Id = floor_Id + 1;
+                    }
                 }
-                floor_Id = floor_Id + 1;
+                mass_Id = mass_Id + 1;
+                // here we still need to fix some bugs so that the program knows a few things:
+                // 1 - Whether teh window knows it is at the same address , meaning brep groups..
+                // 2 - knowing to reset the floor count back to 0 if the address changes. 
             }
-            mass_Id = mass_Id + 1;
+            
 
             mesh.Normals.ComputeNormals();
             pnts = points;
