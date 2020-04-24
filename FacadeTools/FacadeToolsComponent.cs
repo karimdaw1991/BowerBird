@@ -1,8 +1,10 @@
 ﻿using System;
 using System.Collections.Generic;
-
 using Grasshopper.Kernel;
 using Rhino.Geometry;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
 
 // In order to load the result of this wizard, you will also need to
 // add the output bin/ folder of this project to the list of loaded
@@ -21,6 +23,9 @@ namespace FacadeTools
 
         // global Mesh Dictionary
         public static Dictionary<int, WindowElement> WindowDictionary;
+
+        // global house Ids
+        public static List<int> HouseIds;
     }
 
 
@@ -134,9 +139,9 @@ namespace FacadeTools
                 AddRuntimeMessage(GH_RuntimeMessageLevel.Error, "Number of breps need to exceed 1");
                 return;
             }
-            if (PanelWidth < 0.0)
+            if (PanelWidth < 0.5)
             {
-                AddRuntimeMessage(GH_RuntimeMessageLevel.Error, "Panel Width Should be larger than 0.0");
+                AddRuntimeMessage(GH_RuntimeMessageLevel.Error, "Panel Width Should be larger than 0.5");
                 return;
             }
 
@@ -147,6 +152,8 @@ namespace FacadeTools
             Brep[] sBreps = SortBrepByFloor(breps);
             //Step 2 Compute Sorted Floor Heights
             double[] sHeights = ComputeFloorHeights(breps);
+            //Step 3 Compute Order of House Ids
+            ComputeHouseIds(breps);
             //Step 3 Make mesh
             Mesh mesh = MakeMeshFaces(breps, PanelWidth, out pnts);
             //Step 4 Display BottomFaces
@@ -205,8 +212,6 @@ namespace FacadeTools
         // getting floor Heights
         private double[] ComputeFloorHeights(List<Brep> ListOfBreps)
         {
-
-            Console.Write("Getting Floor Heights");
             Brep[] SortedBreps = Globals.SortedBreps;
             double[] heights = new double[SortedBreps.Length];
 
@@ -222,7 +227,62 @@ namespace FacadeTools
             return heights;
         }
 
+        // Catagorizing breps into buildings
+        // For now let us create something that gives us back an array that indicates the ID of the buildings
 
+        
+        private void ComputeHouseIds(List<Brep> ListOfBreps)
+        {
+            double threshold = 10.0;
+            Brep[] SortedBreps = Globals.SortedBreps;
+            List<Brep> newList = new List<Brep>();
+            List<int> test = new List<int>();
+            // here we see the test passed, the loop is adding the right amount of objects
+            // question is why is it when we int a brep to put in new list, it only adds one object. 
+            // we first establish if the problem is with the global variables
+            List<int> listOfGroups = new List<int>();
+            List<Brep> listOfBreps = new List<Brep>(SortedBreps);
+            // i think we need to add the first id to the list
+            int ID = 0;
+            listOfGroups.Add(0);
+            // First we need to find the center points 
+            for (int i = 0; i < listOfBreps.Count; i++)
+            {
+                Brep brep = listOfBreps[i];
+                BoundingBox bbox = brep.GetBoundingBox(true);
+                Point3d centerPoint = bbox.Center;
+                double x = centerPoint.X;
+                double y = centerPoint.Y;
+                for (int j = i + 1; j < listOfBreps.Count;)
+                {
+                    Brep brep2 = listOfBreps[j];
+                    BoundingBox bbox2 = brep2.GetBoundingBox(true);
+                    Point3d centerPoint2 = bbox2.Center;
+                    double x2 = centerPoint2.X;
+                    double y2 = centerPoint2.Y;
+
+                    double vectorX = x - x2;
+                    double vectorY = y - y2;
+
+                
+                    double length = Math.Sqrt(Math.Pow(vectorX, 2) + Math.Pow(vectorY, 2));
+
+                    if (length <= threshold)
+                    {
+                        listOfGroups.Add(ID);
+                        listOfBreps.RemoveAt(j);
+                    }
+                    else
+                    {
+                        ID = ID + 1;
+                        listOfGroups.Add(ID);
+                        j += 1;
+                    }
+                }
+            }
+            Globals.HouseIds = listOfGroups;
+        }
+        
         //Getting Floor Breps
         private Tuple<BrepFace, Brep> ComputeFloorSurfaces(Brep brep)
         {
@@ -284,7 +344,7 @@ namespace FacadeTools
         {
             // initiate Dictionary to save windowElement attributes
             var Windows = new Dictionary<int, WindowElement>();
-
+            List<int> ListOfHouseIds = Globals.HouseIds;
 
             //getting list of heights
             double[] heightsList = Globals.SortedHeights;
@@ -297,13 +357,13 @@ namespace FacadeTools
 
             Mesh mesh = new Mesh();
             // looping through srted Breps
-            int pnt_Id = 0;
-            int face_Id = 0;
-            int edge_Id = 0;
-            int floor_Id = 0;
-            int mass_Id = 0;
+            int pnt_Id = new int();
+            int face_Id = new int();
+            int edge_Id = new int();
+            int floor_Id = new int();
+            int mass_Id = new int();
 
-
+            List<int> windowsPerFloors = new List<int>(); 
             for (int i = 0; i < SortedBreps.Length; i++)
             {
 
@@ -312,6 +372,8 @@ namespace FacadeTools
                 BrepFace face = ComputeFloorSurfaces(brep).Item1;
                 //Getting Edge curves of Face
                 List<Curve> edges = ComputeFloorEdges(face);
+                // we need to know how many windows are on each floor
+                int windowsPerFloor = 0;
                 
                 for (int j = 0; j < edges.Count; j++)
                 {
@@ -321,6 +383,7 @@ namespace FacadeTools
                     Curve[] splitSegmenets = curve.Split(curvePars);
                     int count = splitSegmenets.Length;
                     Point3d[][] panalPntGroups = new Point3d[count][];
+
                     for (int k = 0; k < count; k++)
                     {
                         double height = heightsList[i];
@@ -331,23 +394,18 @@ namespace FacadeTools
                         Point3d pnt3 = new Point3d(pnt0.X, pnt0.Y, pnt0.Z + height); // using global variable height
                         Point3d[] panalPnts = new Point3d[4];
                         int[] vertexIds = new int[4];
-
                         panalPnts[0] = pnt0;
                         panalPnts[1] = pnt1;
                         panalPnts[2] = pnt2;
                         panalPnts[3] = pnt2;
-
                         points.Add(pnt0);
                         points.Add(pnt1);
                         points.Add(pnt2);
                         points.Add(pnt3);
-
-                        //AddingPoints to Mesh
                         mesh.Vertices.Add(pnt0);
                         mesh.Vertices.Add(pnt1);
                         mesh.Vertices.Add(pnt2);
                         mesh.Vertices.Add(pnt3);
-
                         int vertexId0 = pnt_Id;
                         int vertexId1 = pnt_Id + 1;
                         int vertexId2 = pnt_Id + 2;
@@ -372,24 +430,27 @@ namespace FacadeTools
                                 );
                         pnt_Id = pnt_Id + 4;
                         face_Id = face_Id + 1;
+                        windowsPerFloor = windowsPerFloor + 1;
+                       
                     }
+
                     edge_Id = edge_Id + 1;
-                    if (face_Id > count * edges.Count * SortedBreps.Length)
-                    {
-                        floor_Id = 0;
-                    }
-                    else
-                    {
-                        floor_Id = floor_Id + 1;
-                    }
+                    windowsPerFloors.Add(windowsPerFloor);
                 }
-                mass_Id = mass_Id + 1;
+                if (face_Id < windowsPerFloors[i])
+                {
+                    floor_Id = 0;
+                }
+                else
+                {
+                    floor_Id = floor_Id + 1;
+                }
                 // here we still need to fix some bugs so that the program knows a few things:
                 // 1 - Whether teh window knows it is at the same address , meaning brep groups..
                 // 2 - knowing to reset the floor count back to 0 if the address changes. 
+                mass_Id = ListOfHouseIds[i];
             }
             
-
             mesh.Normals.ComputeNormals();
             pnts = points;
             Globals.WindowDictionary = Windows;
