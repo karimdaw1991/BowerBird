@@ -15,6 +15,9 @@ namespace FacadeTools
 {
     static class Globals
     {
+        // global 
+        public static List<MassObject> MassObjects;
+
         // global sorted breps
         public static Brep[] SortedBreps;
 
@@ -31,9 +34,9 @@ namespace FacadeTools
     public class BuildingObject
     {
        
-        protected int HouseNumber { get; set; }
-        protected int FloorCount { get; set; }
-        protected List<MassObject> MassObjects { get; set; }
+        public int HouseNumber { get; set; }
+        public int FloorCount { get; set; }
+        public List<MassObject> MassObjects { get; set; }
 
         public BuildingObject()
         {
@@ -50,6 +53,7 @@ namespace FacadeTools
 
     public class MassObject : BuildingObject
     {
+        public int BuildingNumber { get; set; }
         public int MassId { get; set; }
         public int FloorNumber { get; set; }
         public double XComp { get; set; }
@@ -125,7 +129,7 @@ namespace FacadeTools
             // to import lists or trees of values, modify the ParamAccess flag.
             pManager.AddBrepParameter("Building Masses", "BM", "Building masses for facade generation", GH_ParamAccess.list);
             pManager.AddNumberParameter("Panel Width", "PW", "Desired width of panel", GH_ParamAccess.item, 1.0);
-            pManager.AddIntegerParameter("Window Id", "Window Id", "Provides the Id to indicate a window#s attributes", GH_ParamAccess.item, 1);
+            pManager.AddIntegerParameter("mass Id", "mass Id", "Provides the Id to indicate a mass attributes", GH_ParamAccess.item, 1);
 
 
             // If you want to change properties of certain parameters, 
@@ -143,13 +147,12 @@ namespace FacadeTools
             // Output parameters do not have default values, but they too must have the correct access type.
 
 
-            pManager.AddMeshParameter("Mesh Facade", "FM", "Mesh representation of facade", GH_ParamAccess.item);
-            pManager.AddBrepParameter("Floor Surfaces", "FS", "Brep surfaces for each floor level", GH_ParamAccess.list);
-            pManager.AddPointParameter("Vertex Points", "VP", "Vertex points of mesh faces", GH_ParamAccess.list);
-            pManager.AddIntegerParameter("Window Element Floor Number", "W_FloorNumber", "Floor number of window", GH_ParamAccess.item);
-            pManager.AddIntegerParameter("Window Element Window Number", "W_WindowNumber", "Window number of window", GH_ParamAccess.item);
-            pManager.AddIntegerParameter("Window Element Edge Number", "W_EdgeNumber", "Edge number of window", GH_ParamAccess.item);
-            pManager.AddIntegerParameter("Window Element House Number Number", "W_HouseNumber", "House number of window", GH_ParamAccess.item);
+            //pManager.AddMeshParameter("Mesh Facade", "FM", "Mesh representation of facade", GH_ParamAccess.item);
+            //pManager.AddBrepParameter("Floor Surfaces", "FS", "Brep surfaces for each floor level", GH_ParamAccess.list);
+            pManager.AddIntegerParameter("BuildingObject number", "Building Number", "Id of building object", GH_ParamAccess.item);
+            pManager.AddIntegerParameter("MassObject number", "MassObject Number", "Id of mass object", GH_ParamAccess.item);
+            pManager.AddNumberParameter("MassObject Height", "MassObject height", "height of mass object", GH_ParamAccess.item);
+            pManager.AddIntegerParameter("HouseNumber", "HouseNumber", "Id of mass object", GH_ParamAccess.item);
             //pManager.AddPointParameter("Edge Points", "EP", "Point representation of subdivided edges given a panal width", GH_ParamAccess.list);
             // Sometimes you want to hide a specific parameter from the Rhino preview.// You can use the HideParameter() method as a quick way://pManager.HideParameter(0);
         }
@@ -167,14 +170,14 @@ namespace FacadeTools
             List<Brep> breps = new List<Brep>();
 
             double PanelWidth = 0.0;
-            int WindowId = 0;
+            int massId = 0;
 
             List<Point3d> pnts = new List<Point3d>();
             // Then we need to access the input parameters individually. 
             // When data cannot be extracted from a parameter, we should abort this method.
             if (!DA.GetDataList(0, breps)) return;
             if (!DA.GetData(1, ref PanelWidth)) return;
-            if (!DA.GetData(2, ref WindowId)) return;
+            if (!DA.GetData(2, ref massId)) return;
 
 
             // We should now validate the data and warn the user if invalid data is supplied.
@@ -193,38 +196,50 @@ namespace FacadeTools
             // The actual functionality will be in a different method:
 
             //Step 1 Sort breps
-            Brep[] sBreps = SortBrepByFloor(breps);
+            //Brep[] sBreps = SortBrepByFloor(breps);
             //Step 2 Compute Sorted Floor Heights
-            double[] sHeights = ComputeFloorHeights(breps);
+            //double[] sHeights = ComputeFloorHeights(breps);
             //Step 3 Compute Order of House Ids
-            ComputeHouseIds(breps);
+            //ComputeHouseIds(breps);
+            
+
+            ConvertBrepListToMassObjects(breps);
+            ClusterMassesIntoBuildings();
+            MassObject massobject = Globals.MassObjects[massId];
+            int MyBuildingId = massobject.BuildingNumber;
+            int MyMassId = massobject.MassId;
+            double MyMassHeight = massobject.Height;
+            int MyMassHouseNumber = massobject.HouseNumber;
+
+
+
             //Step 3 Make mesh
-            Mesh mesh = MakeMeshFaces(breps, PanelWidth, out pnts);
+            //Mesh mesh = MakeMeshFaces(breps, PanelWidth, out pnts);
             //Step 4 Display BottomFaces
-            List<Brep> bottomFaces = DisplayAllBottomSurfaces(breps);
+            //List<Brep> bottomFaces = DisplayAllBottomSurfaces(breps);
             //Step 5 Save data onto each face
 
             // for now we will just test this by sending teh data for the floor level,
             // later we will instead send over the window object as a whole
             // then create another compnenet that reads that data and does something with it.
+            /*
             WindowElement WindowInstance = new WindowElement();
             WindowElement window10 = WindowInstance.InitiateWindow(WindowId);
             int floorNumber = window10.FloorNumber;
             int windowNumber = window10.WindowId;
             int EdgeNumber = window10.EdgeNumber;
             int HouseNumber = window10.HouseNumber;
-
-
+            */
 
 
             // Finally assign the spiral to the output parameter.
-            DA.SetData(0, mesh);
-            DA.SetDataList(1, bottomFaces);
-            DA.SetDataList(2, pnts);
-            DA.SetData(3, floorNumber);
-            DA.SetData(4, windowNumber);
-            DA.SetData(5, EdgeNumber);
-            DA.SetData(6, HouseNumber);
+            //DA.SetData(0, mesh);
+            //DA.SetDataList(1, bottomFaces);
+            //DA.SetDataList(2, pnts);
+            DA.SetData(0, MyBuildingId);
+            DA.SetData(1, MyMassId);
+            DA.SetData(2, MyMassHeight);
+            DA.SetData(3, MyMassHouseNumber);
         }
 
         //----------------------------------------------------------------------------------------------------
@@ -242,18 +257,65 @@ namespace FacadeTools
             return mass_object;
         }
 
-        // looping through all givien breps and converting all to MassObjects
+        // looping through all givien breps and converting all to MassObjects adn giving each of them IDs
         private void ConvertBrepListToMassObjects(List<Brep> breps)
         {
+            List<MassObject> massObjects = new List<MassObject>();
             for(int i = 0; i < breps.Count;i++)
             {
                 Brep brep = breps[i];
                 MassObject mObject = BrepToMassObject(brep);
                 // Giving all massObjects an id with the iterator
                 mObject.MassId = i;
+                massObjects.Add(mObject);
             }
+
+            Globals.MassObjects = massObjects;
         }
 
+        // Catagorizing breps into buildings
+        // For now let us create something that gives us back an array that indicates the ID of the buildings
+
+        private void ClusterMassesIntoBuildings()
+        {
+            double threshold = 10.0;
+            List<MassObject> massObjects = Globals.MassObjects;
+            List<Brep> newList = new List<Brep>();
+            //Using Query Syntax
+            var HousesGroupedByXandY = from massObject in massObjects
+                                       group massObject by new
+                                        {
+                                           massObject.XComp,
+                                           massObject.YComp,
+                                        } into massGroup
+                                        orderby massGroup.Key.XComp ascending,
+                                                massGroup.Key.YComp ascending
+                                        select new
+                                        {
+                                            x = massGroup.Key.XComp,
+                                            y = massGroup.Key.YComp,
+                                            Building = massGroup.OrderBy(z => z.ZComp)
+                                        };
+            int id = 0;
+            int floorCount = 0;
+            List<BuildingObject> buildingObjects = new List<BuildingObject>();
+            foreach (var group in HousesGroupedByXandY)
+            {
+                BuildingObject buildingObject = new BuildingObject();
+                buildingObject.HouseNumber = id;
+                foreach (MassObject massObject in group.Building)
+                {
+                    massObject.FloorNumber = floorCount;
+                    massObject.BuildingNumber = id;
+                    // adding massobjects to list of mass objects in building object class
+                    buildingObject.MassObjects.Add(massObject);
+                    floorCount++;
+                    buildingObjects.Add(buildingObject);
+                }
+                id++;
+            }
+           
+        }
         // Sort Breps according to floor level
         private Brep[] SortBrepByFloor(List<Brep> ListOfBreps)
         {
@@ -294,109 +356,59 @@ namespace FacadeTools
             return heights;
         }
 
-        // Catagorizing breps into buildings
-        // For now let us create something that gives us back an array that indicates the ID of the buildings
-
+        /*
         private void ComputeHouseIds(List<Brep> ListOfBreps)
         {
             double threshold = 10.0;
             Brep[] SortedBreps = Globals.SortedBreps;
             List<Brep> newList = new List<Brep>();
-
-            var houseAddresses = new List<HouseAddress>();
-            for ( int i = 0; i < SortedBreps.Length; i++)
+            List<int> test = new List<int>();
+            // here we see the test passed, the loop is adding the right amount of objects
+            // question is why is it when we int a brep to put in new list, it only adds one object. 
+            // we first establish if the problem is with the global variables
+            List<int> listOfGroups = new List<int>();
+            List<Brep> listOfBreps = new List<Brep>(SortedBreps);
+            // i think we need to add the first id to the list
+            int ID = 0;
+            listOfGroups.Add(0);
+            // First we need to find the center points 
+            for (int i = 0; i < listOfBreps.Count; i++)
             {
-                Brep brep = SortedBreps[i];
+                Brep brep = listOfBreps[i];
                 BoundingBox bbox = brep.GetBoundingBox(true);
                 Point3d centerPoint = bbox.Center;
                 double x = centerPoint.X;
                 double y = centerPoint.Y;
-                double z = centerPoint.Z;
-                HouseAddress HAddress = new HouseAddress { BrepId = i, XComp = x, YComp = y, ZComp = z };
-                houseAddresses.Add(HAddress);
-            }
-
-            //Using Query Syntax
-            var HousesGroupedByXandY = from house in houseAddresses
-                                       group house by new
-                                        {
-                                           house.XComp,
-                                           house.YComp,
-                                        } into houseGroup
-                                        orderby houseGroup.Key.XComp ascending,
-                                                houseGroup.Key.YComp ascending
-                                        select new
-                                        {
-                                            x = houseGroup.Key.XComp,
-                                            y = houseGroup.Key.YComp,
-                                            Houses = houseGroup.OrderBy(z => z.ZComp)
-                                        };
-            int id = 0;
-            foreach (var group in HousesGroupedByXandY)
-            {
-                foreach (var brep in group.Houses)
+                for (int j = i + 1; j < listOfBreps.Count;)
                 {
-                    brep.BrepId = id;
-                }
-                id++;
-            }
+                    Brep brep2 = listOfBreps[j];
+                    BoundingBox bbox2 = brep2.GetBoundingBox(true);
+                    Point3d centerPoint2 = bbox2.Center;
+                    double x2 = centerPoint2.X;
+                    double y2 = centerPoint2.Y;
 
-        }
+                    double vectorX = x - x2;
+                    double vectorY = y - y2;
 
 
-            /*
-            private void ComputeHouseIds(List<Brep> ListOfBreps)
-            {
-                double threshold = 10.0;
-                Brep[] SortedBreps = Globals.SortedBreps;
-                List<Brep> newList = new List<Brep>();
-                List<int> test = new List<int>();
-                // here we see the test passed, the loop is adding the right amount of objects
-                // question is why is it when we int a brep to put in new list, it only adds one object. 
-                // we first establish if the problem is with the global variables
-                List<int> listOfGroups = new List<int>();
-                List<Brep> listOfBreps = new List<Brep>(SortedBreps);
-                // i think we need to add the first id to the list
-                int ID = 0;
-                listOfGroups.Add(0);
-                // First we need to find the center points 
-                for (int i = 0; i < listOfBreps.Count; i++)
-                {
-                    Brep brep = listOfBreps[i];
-                    BoundingBox bbox = brep.GetBoundingBox(true);
-                    Point3d centerPoint = bbox.Center;
-                    double x = centerPoint.X;
-                    double y = centerPoint.Y;
-                    for (int j = i + 1; j < listOfBreps.Count;)
+                    double length = Math.Sqrt(Math.Pow(vectorX, 2) + Math.Pow(vectorY, 2));
+
+                    if (length <= threshold)
                     {
-                        Brep brep2 = listOfBreps[j];
-                        BoundingBox bbox2 = brep2.GetBoundingBox(true);
-                        Point3d centerPoint2 = bbox2.Center;
-                        double x2 = centerPoint2.X;
-                        double y2 = centerPoint2.Y;
-
-                        double vectorX = x - x2;
-                        double vectorY = y - y2;
-
-
-                        double length = Math.Sqrt(Math.Pow(vectorX, 2) + Math.Pow(vectorY, 2));
-
-                        if (length <= threshold)
-                        {
-                            listOfGroups.Add(ID);
-                            listOfBreps.RemoveAt(j);
-                        }
-                        else
-                        {
-                            ID = ID + 1;
-                            listOfGroups.Add(ID);
-                            j += 1;
-                        }
+                        listOfGroups.Add(ID);
+                        listOfBreps.RemoveAt(j);
+                    }
+                    else
+                    {
+                        ID = ID + 1;
+                        listOfGroups.Add(ID);
+                        j += 1;
                     }
                 }
-                Globals.HouseIds = listOfGroups;
             }
-            */
+            Globals.HouseIds = listOfGroups;
+        }
+        */
 
         //Getting Floor Breps
         private Tuple<BrepFace, Brep> ComputeFloorSurfaces(Brep brep)
