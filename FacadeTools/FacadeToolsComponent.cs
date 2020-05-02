@@ -28,6 +28,56 @@ namespace FacadeTools
         public static List<int> HouseIds;
     }
 
+    public class BuildingObject
+    {
+       
+        protected int HouseNumber { get; set; }
+        protected int FloorCount { get; set; }
+        protected List<MassObject> MassObjects { get; set; }
+
+        public BuildingObject()
+        {
+            HouseNumber = 0;
+            FloorCount = 0;
+            MassObjects = new List<MassObject>();
+        }
+
+        public BuildingObject(List<MassObject> ListofMassObjects)
+        {
+            MassObjects = ListofMassObjects;
+        }
+    }
+
+    public class MassObject : BuildingObject
+    {
+        public int MassId { get; set; }
+        public int FloorNumber { get; set; }
+        public double XComp { get; set; }
+        public double YComp { get; set; }
+        public double ZComp { get; set; }
+        public double Height { get; set; }
+        public double Area { get; set; }
+        public Brep MassBrep { get; set; }
+        public Point3d CenterPoint { get; set; }
+
+        public MassObject()
+        {
+            MassId = 0;
+            FloorNumber = 0;
+            XComp = 0;
+            YComp = 0;
+            ZComp = 0;
+            Height = 0;
+            Area = 0;
+            MassBrep = new Brep();
+            CenterPoint = new Point3d();
+        }
+
+        public MassObject(Brep brep)
+        {
+            MassBrep = brep;
+        }
+    }
 
     public class WindowElement
     {
@@ -41,14 +91,12 @@ namespace FacadeTools
         public WindowElement InitiateWindow(int id)
         {
             Dictionary<int, WindowElement> dict = Globals.WindowDictionary;
-            WindowElement windowElement = new WindowElement(); 
+            WindowElement windowElement = new WindowElement();
             windowElement = dict[id];
             return windowElement;
         }
 
     }
-
-
 
     public class FacadeToolsComponent : GH_Component
     {
@@ -65,8 +113,6 @@ namespace FacadeTools
               "Bowerbird", "Facade")
         {
         }
-
-
         /// <summary>
         /// Registers all the input parameters for this component.
         /// </summary>
@@ -96,7 +142,7 @@ namespace FacadeTools
             // Use the pManager object to register your output parameters.
             // Output parameters do not have default values, but they too must have the correct access type.
 
-            
+
             pManager.AddMeshParameter("Mesh Facade", "FM", "Mesh representation of facade", GH_ParamAccess.item);
             pManager.AddBrepParameter("Floor Surfaces", "FS", "Brep surfaces for each floor level", GH_ParamAccess.list);
             pManager.AddPointParameter("Vertex Points", "VP", "Vertex points of mesh faces", GH_ParamAccess.list);
@@ -113,8 +159,6 @@ namespace FacadeTools
         /// <param name="DA">The DA object can be used to retrieve data from input parameters and 
         /// to store data in output parameters.</param>
         /// 
-
-
 
         protected override void SolveInstance(IGH_DataAccess DA)
         {
@@ -177,7 +221,7 @@ namespace FacadeTools
             DA.SetData(0, mesh);
             DA.SetDataList(1, bottomFaces);
             DA.SetDataList(2, pnts);
-            DA.SetData(3,floorNumber);
+            DA.SetData(3, floorNumber);
             DA.SetData(4, windowNumber);
             DA.SetData(5, EdgeNumber);
             DA.SetData(6, HouseNumber);
@@ -185,7 +229,30 @@ namespace FacadeTools
 
         //----------------------------------------------------------------------------------------------------
         //Here Come the Methods
+        private MassObject BrepToMassObject(Brep brep)
+        {
+            MassObject mass_object = new MassObject(brep);
+            BoundingBox bbox = brep.GetBoundingBox(true);
+            mass_object.CenterPoint = bbox.Center;
+            mass_object.XComp = bbox.Center.X;
+            mass_object.YComp = bbox.Center.Y;
+            mass_object.ZComp = bbox.Center.Z;
+            mass_object.Height = bbox.Diagonal.Z;
+            mass_object.Area = ComputeFloorSurfaces(brep).Item2.GetArea();
+            return mass_object;
+        }
 
+        // looping through all givien breps and converting all to MassObjects
+        private void ConvertBrepListToMassObjects(List<Brep> breps)
+        {
+            for(int i = 0; i < breps.Count;i++)
+            {
+                Brep brep = breps[i];
+                MassObject mObject = BrepToMassObject(brep);
+                // Giving all massObjects an id with the iterator
+                mObject.MassId = i;
+            }
+        }
 
         // Sort Breps according to floor level
         private Brep[] SortBrepByFloor(List<Brep> ListOfBreps)
@@ -230,59 +297,107 @@ namespace FacadeTools
         // Catagorizing breps into buildings
         // For now let us create something that gives us back an array that indicates the ID of the buildings
 
-        
         private void ComputeHouseIds(List<Brep> ListOfBreps)
         {
             double threshold = 10.0;
             Brep[] SortedBreps = Globals.SortedBreps;
             List<Brep> newList = new List<Brep>();
-            List<int> test = new List<int>();
-            // here we see the test passed, the loop is adding the right amount of objects
-            // question is why is it when we int a brep to put in new list, it only adds one object. 
-            // we first establish if the problem is with the global variables
-            List<int> listOfGroups = new List<int>();
-            List<Brep> listOfBreps = new List<Brep>(SortedBreps);
-            // i think we need to add the first id to the list
-            int ID = 0;
-            listOfGroups.Add(0);
-            // First we need to find the center points 
-            for (int i = 0; i < listOfBreps.Count; i++)
+
+            var houseAddresses = new List<HouseAddress>();
+            for ( int i = 0; i < SortedBreps.Length; i++)
             {
-                Brep brep = listOfBreps[i];
+                Brep brep = SortedBreps[i];
                 BoundingBox bbox = brep.GetBoundingBox(true);
                 Point3d centerPoint = bbox.Center;
                 double x = centerPoint.X;
                 double y = centerPoint.Y;
-                for (int j = i + 1; j < listOfBreps.Count;)
+                double z = centerPoint.Z;
+                HouseAddress HAddress = new HouseAddress { BrepId = i, XComp = x, YComp = y, ZComp = z };
+                houseAddresses.Add(HAddress);
+            }
+
+            //Using Query Syntax
+            var HousesGroupedByXandY = from house in houseAddresses
+                                       group house by new
+                                        {
+                                           house.XComp,
+                                           house.YComp,
+                                        } into houseGroup
+                                        orderby houseGroup.Key.XComp ascending,
+                                                houseGroup.Key.YComp ascending
+                                        select new
+                                        {
+                                            x = houseGroup.Key.XComp,
+                                            y = houseGroup.Key.YComp,
+                                            Houses = houseGroup.OrderBy(z => z.ZComp)
+                                        };
+            int id = 0;
+            foreach (var group in HousesGroupedByXandY)
+            {
+                foreach (var brep in group.Houses)
                 {
-                    Brep brep2 = listOfBreps[j];
-                    BoundingBox bbox2 = brep2.GetBoundingBox(true);
-                    Point3d centerPoint2 = bbox2.Center;
-                    double x2 = centerPoint2.X;
-                    double y2 = centerPoint2.Y;
+                    brep.BrepId = id;
+                }
+                id++;
+            }
 
-                    double vectorX = x - x2;
-                    double vectorY = y - y2;
+        }
 
-                
-                    double length = Math.Sqrt(Math.Pow(vectorX, 2) + Math.Pow(vectorY, 2));
 
-                    if (length <= threshold)
+            /*
+            private void ComputeHouseIds(List<Brep> ListOfBreps)
+            {
+                double threshold = 10.0;
+                Brep[] SortedBreps = Globals.SortedBreps;
+                List<Brep> newList = new List<Brep>();
+                List<int> test = new List<int>();
+                // here we see the test passed, the loop is adding the right amount of objects
+                // question is why is it when we int a brep to put in new list, it only adds one object. 
+                // we first establish if the problem is with the global variables
+                List<int> listOfGroups = new List<int>();
+                List<Brep> listOfBreps = new List<Brep>(SortedBreps);
+                // i think we need to add the first id to the list
+                int ID = 0;
+                listOfGroups.Add(0);
+                // First we need to find the center points 
+                for (int i = 0; i < listOfBreps.Count; i++)
+                {
+                    Brep brep = listOfBreps[i];
+                    BoundingBox bbox = brep.GetBoundingBox(true);
+                    Point3d centerPoint = bbox.Center;
+                    double x = centerPoint.X;
+                    double y = centerPoint.Y;
+                    for (int j = i + 1; j < listOfBreps.Count;)
                     {
-                        listOfGroups.Add(ID);
-                        listOfBreps.RemoveAt(j);
-                    }
-                    else
-                    {
-                        ID = ID + 1;
-                        listOfGroups.Add(ID);
-                        j += 1;
+                        Brep brep2 = listOfBreps[j];
+                        BoundingBox bbox2 = brep2.GetBoundingBox(true);
+                        Point3d centerPoint2 = bbox2.Center;
+                        double x2 = centerPoint2.X;
+                        double y2 = centerPoint2.Y;
+
+                        double vectorX = x - x2;
+                        double vectorY = y - y2;
+
+
+                        double length = Math.Sqrt(Math.Pow(vectorX, 2) + Math.Pow(vectorY, 2));
+
+                        if (length <= threshold)
+                        {
+                            listOfGroups.Add(ID);
+                            listOfBreps.RemoveAt(j);
+                        }
+                        else
+                        {
+                            ID = ID + 1;
+                            listOfGroups.Add(ID);
+                            j += 1;
+                        }
                     }
                 }
+                Globals.HouseIds = listOfGroups;
             }
-            Globals.HouseIds = listOfGroups;
-        }
-        
+            */
+
         //Getting Floor Breps
         private Tuple<BrepFace, Brep> ComputeFloorSurfaces(Brep brep)
         {
